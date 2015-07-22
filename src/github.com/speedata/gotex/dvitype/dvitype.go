@@ -13,6 +13,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/speedata/gotex/simplefilefinder"
 )
 
 func round(f float32) int {
@@ -27,6 +29,7 @@ type Dvitype struct {
 	PageSpec   string
 	MaxPages   int
 	Resolution float32
+	Basedir    string
 	dvifile    io.ReadSeeker
 	tfmfile    io.Reader
 	dvisize    int64
@@ -201,14 +204,6 @@ type (
 )
 
 // 11
-func init() {
-
-	// 12
-	// 31
-	// 	nf = 0; width ptr = 0; font name[0] = 1;
-	// font space [invalid font ] = 0; { for out space and out vmove } font bc [invalid font ] = 1; font ec [invalid font ] = 0;
-	// 43
-}
 
 // 27
 func (d *Dvitype) getbyte() int {
@@ -570,7 +565,7 @@ func (d *Dvitype) defineFont(e int) {
 		curname[r+4] = 'm'
 		_fontname := string(curname[1 : r+5])
 		// :66
-		d.tfmfile, err = os.Open(_fontname)
+		d.tfmfile, err = os.Open(simplefilefinder.Locate(_fontname))
 		if err != nil {
 			fmt.Println(err)
 			fmt.Print("---not loaded, TFM file can't be opened!")
@@ -733,12 +728,11 @@ func (d Dvitype) Run() {
 	var (
 		k int
 	)
+	simplefilefinder.Basedir = d.Basedir
 	var err error
-	// 50 dialog()
+	// 50 dialog
 	fmt.Println("This is DVItype, Version 3.6")
-	// Determine the desired out_mode 51
 
-	// Determine the desired start count values 52
 	start_there = make([]bool, 0)
 	start_count = make([]int, 0)
 	for k, v := range strings.Split(d.PageSpec, ".") {
@@ -788,9 +782,10 @@ func (d Dvitype) Run() {
 	if new_mag > 0 {
 		fmt.Printf("  New magnification factor =  %8.3f\n", new_mag/1000)
 	}
-	// end dialog
+	// :50
 
-	// 109 A DVI-reading program that reads the postamble first need not look at the preamble; but DVItype looks at the preamble in order to do error checking, and to display the introductory comment.
+	// A DVI-reading program that reads the postamble first need not look at the preamble; but DVItype looks at the preamble in order to do error checking, and to display the introductory comment.
+	// 109:
 	if d.getbyte() != pre {
 		bad_dvi("First byte isn't start of preamble!")
 	}
@@ -827,7 +822,7 @@ func (d Dvitype) Run() {
 	fmt.Printf("'%s'\n", string(buf))
 	d.curloc += int64(c)
 	afterpre = d.curloc
-	// end 109
+	// :109
 
 	// 	if out_mode=the_works then {|random_reading=true|}
 	if d.OutMode == the_works {
@@ -940,11 +935,10 @@ func (d Dvitype) Run() {
 			}
 			d.scan_bop()
 			if in_postamble {
-				goto done
+				break
 			}
 		}
 	}
-done:
 	if d.OutMode < the_works {
 		if !in_postamble {
 			d.skip_pages(true)
