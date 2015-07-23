@@ -199,7 +199,6 @@ func bad_dvi(s string) {
 }
 
 type (
-	textchar  uint8
 	eightbits uint8
 )
 
@@ -234,11 +233,13 @@ func (d *Dvitype) getthreebytes() int {
 func (d *Dvitype) signedbyte() int {
 	b, _ := d.read()
 	d.curloc++
+	var ret int
 	if b < 128 {
-		return int(b)
+		ret = int(b)
 	} else {
-		return int(b) - 256
+		ret = int(b) - 256
 	}
+	return ret
 }
 
 func (d *Dvitype) signedpair() int {
@@ -271,13 +272,15 @@ func (d *Dvitype) signedquad() int {
 	a2, _ := d.read()
 	a3, _ := d.read()
 	a4, _ := d.read()
-
+	var ret int
 	d.curloc += 4
 	if a1 < 128 {
-		return ((int(a1)*256+int(a2))*256+int(a3))*256 + int(a4)
+		ret = ((int(a1)*256+int(a2))*256+int(a3))*256 + int(a4)
 	} else {
-		return (((int(a1)-256)*256+int(a2))*256+int(a3))*256 + int(a4)
+		ret = (((int(a1)-256)*256+int(a2))*256+int(a3))*256 + int(a4)
 	}
+
+	return ret
 }
 
 // 32
@@ -327,6 +330,8 @@ func (d *Dvitype) firstpar(o eightbits) int {
 		203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218,
 		219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234:
 		return int(o - fnt_num_0)
+	default:
+		panic("Can't happen")
 	}
 	return 0
 }
@@ -653,7 +658,7 @@ func (d *Dvitype) readPostamble() {
 		k int // loop index
 	// p, q, m int //general purpose registers
 	)
-	// showing := false
+	showing = false
 	post_loc = d.curloc - 5
 	fmt.Printf("Postamble starts at byte %d.\n", post_loc)
 
@@ -728,6 +733,17 @@ func (d Dvitype) Run() {
 	var (
 		k int
 	)
+	// Set initial values 11
+	// 74
+	maxv = 017777777777 - 99
+	maxh = 017777777777 - 99
+	maxs = stack_size + 1
+	maxvsofar = 0
+	maxhsofar = 0
+	maxssofar = 0
+	pagecount = 0
+	// 98:
+	old_backpointer = -1
 	simplefilefinder.Basedir = d.Basedir
 	var err error
 	// 50 dialog
@@ -947,7 +963,6 @@ func (d Dvitype) Run() {
 			fmt.Println("backpointer in byte", d.curloc-4, " should be ", old_backpointer, "!")
 		}
 		d.readPostamble()
-
 	}
 }
 func pixelround(a int) int {
@@ -1408,7 +1423,6 @@ func (d *Dvitype) doPage() bool {
 		goto done
 		// :91
 	showstate: // Show the values of ss, h, v, w, x, y, z, hh, and vv then goto done 93⟩
-		// 	if showing then
 		if showing {
 			if d.OutMode > mnemonics_only {
 				fmt.Println()
@@ -1433,8 +1447,8 @@ l9998:
 // 95:
 func (d *Dvitype) skip_pages(bop_seen bool) {
 	var (
-		_p int       // a parameter
-		k  eightbits // command code
+		p int       // a parameter
+		k eightbits // command code
 	)
 	showing = false
 	for {
@@ -1451,24 +1465,25 @@ func (d *Dvitype) skip_pages(bop_seen bool) {
 			}
 		}
 		// skip until finding eop 96
-		for {
+		for k != eop {
 			// if eof -> error
 			k = eightbits(d.getbyte())
-			_p = d.firstpar(k)
+			p = d.firstpar(k)
 			switch k {
 			case set_rule, put_rule:
 				d.signedquad() // ignore
 			case fnt_def1, fnt_def1 + 1, fnt_def1 + 2, fnt_def1 + 3:
-				d.defineFont(_p)
+				d.defineFont(p)
 				fmt.Println()
 			case xxx1, xxx1 + 1, xxx1 + 2, xxx1 + 3:
-				d.getbyte() // ignore
-				_p--
+				for p > 0 {
+					d.getbyte() // ignore
+					p--
+				}
 			case bop, pre, post, post_post, undef1, undef2, undef3, undef4, undef5, undef6:
 				bad_dvi(fmt.Sprintf("illegal command at byte %d", d.curloc))
-			}
-			if k == eop {
-				break
+			default:
+				// ignore
 			}
 		}
 		// :96
@@ -1481,16 +1496,13 @@ func (d *Dvitype) skip_pages(bop_seen bool) {
 
 // 99
 func (d *Dvitype) scan_bop() {
-	var k eightbits
-	for {
+	k := eightbits(nop)
+	for k == nop {
 		//  if eof (dvi file ) then bad dvi ("the file ended prematurely");
 		k = eightbits(d.getbyte())
 		if k >= fnt_def1 && k < fnt_def1+4 {
 			d.defineFont(d.firstpar(k))
 			k = nop
-		}
-		if k != nop {
-			break
 		}
 	}
 	if k == post {
