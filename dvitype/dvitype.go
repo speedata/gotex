@@ -279,7 +279,6 @@ func (d *Dvitype) signedquad() int {
 	} else {
 		ret = (((int(a1)-256)*256+int(a2))*256+int(a3))*256 + int(a4)
 	}
-
 	return ret
 }
 
@@ -806,8 +805,8 @@ func (d Dvitype) Run() {
 		bad_dvi("First byte isn't start of preamble!")
 	}
 
-	if d.getbyte() != 2 {
-		fmt.Printf("identification in byte 1 should be %d!\n", 2)
+	if d.getbyte() != ID_BYTE {
+		fmt.Printf("identification in byte 1 should be %d!\n", ID_BYTE)
 	}
 	// Compute the conversion factors
 	numerator = d.signedquad()
@@ -840,9 +839,8 @@ func (d Dvitype) Run() {
 	afterpre = d.curloc
 	// :109
 
-	// 	if out_mode=the_works then {|random_reading=true|}
 	if d.OutMode == the_works {
-		//   begin @<Find the postamble, working back from the end@>;
+		//   Find the postamble, working back from the end  100:
 		pos, err := d.dvifile.Seek(0, os.SEEK_END)
 		if err != nil {
 			log.Fatal(err)
@@ -873,13 +871,13 @@ func (d Dvitype) Run() {
 			bad_dvi(fmt.Sprintf("post pointer %d at byte %d", q, m-3))
 		}
 
-		d.moveToByte(int64(q))
+		d.moveToByte(q)
 		k = d.getbyte()
 		if k != post {
 			bad_dvi(fmt.Sprintf("byte %d is not post", q))
 		}
 
-		post_loc = int64(q)
+		post_loc = q
 		first_backpointer = int64(d.signedquad())
 
 		in_postamble = true
@@ -915,6 +913,7 @@ func (d Dvitype) Run() {
 					old_backpointer = p
 				}
 				if p < 0 {
+					// link to previous bop is -1 for the first page
 					break
 				}
 			}
@@ -927,7 +926,7 @@ func (d Dvitype) Run() {
 			d.moveToByte(startloc)
 		}
 		if pagecount != totalpages {
-			fmt.Println("there are really ", pagecount, " pages, not ", totalpages, "! ")
+			fmt.Println("there are really", pagecount, "pages, not", totalpages, "!")
 		}
 		// :102
 	}
@@ -1004,7 +1003,7 @@ func (d *Dvitype) minor(pos int, a interface{}) {
 		fmt.Printf("%d: %v", pos, a)
 	}
 }
-func (d *Dvitype) _error(cmd int, a interface{}) {
+func (d *Dvitype) error(cmd int, a interface{}) {
 	if !showing {
 		d.show(cmd, a)
 	} else {
@@ -1070,7 +1069,7 @@ func (d *Dvitype) specialcases(o eightbits, p, a int) bool {
 		d.major(a, "xxx '")
 		badchar = false
 		if p < 0 {
-			d._error(a, "string of negative length!")
+			d.error(a, "string of negative length!")
 		}
 		for k := 1; k <= p; k++ {
 			q = d.getbyte()
@@ -1085,31 +1084,31 @@ func (d *Dvitype) specialcases(o eightbits, p, a int) bool {
 			fmt.Print("'")
 		}
 		if badchar {
-			d._error(a, "non-ASCII character in xxx command!")
+			d.error(a, "non-ASCII character in xxx command!")
 		}
 		return pure
 		// :87
 	case pre:
-		d._error(a, "preamble command within a page!")
+		d.error(a, "preamble command within a page!")
 		return false
 	case post, post_post:
-		d._error(a, "postamble command within a page!")
+		d.error(a, "postamble command within a page!")
 		return false
 	default:
-		d._error(a, fmt.Sprintf("undefined command %d!", o))
+		d.error(a, fmt.Sprintf("undefined command %d!", o))
 		return true
 	}
 movedown:
 	// Finish a command that sets v=v+p, then goto done 92⟩;
 	if (v > 0) && (p > 0) {
 		if v > infinity-p {
-			d._error(a, fmt.Sprintf("arithmetic overflow! parameter changed from %d to %d", p, infinity-v))
+			d.error(a, fmt.Sprintf("arithmetic overflow! parameter changed from %d to %d", p, infinity-v))
 			p = infinity - v
 		}
 	}
 	if (v < 0) && (p < 0) {
 		if -v > p+infinity {
-			d._error(a, fmt.Sprintf("arithmetic overflow! parameter changed from %d to %d", p, (-v)-infinity))
+			d.error(a, fmt.Sprintf("arithmetic overflow! parameter changed from %d to %d", p, (-v)-infinity))
 			p = (-v) - infinity
 		}
 	}
@@ -1137,7 +1136,7 @@ movedown:
 
 	if abs(v) > maxvsofar {
 		if abs(v) > maxv+99 {
-			d._error(a, fmt.Sprintf("warning: |v|>%d!", maxv))
+			d.error(a, fmt.Sprintf("warning: |v|>%d!", maxv))
 			maxv = abs(v)
 		}
 		maxvsofar = abs(v)
@@ -1153,18 +1152,16 @@ changefont:
 	}
 	if curfont == nf {
 		curfont = invalid_font
-		d._error(a, fmt.Sprintf("invalid font selection: font %d was never defined!", p))
+		d.error(a, fmt.Sprintf("invalid font selection: font %d was never defined!", p))
 	}
 
 	if showing {
 		if d.OutMode > mnemonics_only {
-			fmt.Print(" current font is  ")
+			fmt.Print(" current font is ")
 			d.printFont(curfont)
 		}
 	}
 	return pure
-	// :94
-	return true
 }
 
 func rulepixels(x int) int {
@@ -1198,7 +1195,6 @@ func (d *Dvitype) doPage() bool {
 		showing = false
 		o = eightbits(d.getbyte())
 		p = d.firstpar(o)
-
 		// if eof (dvi file ) then bad dvi ( "the file ended prematurely")
 
 		// Start translation of command o and goto the appropriate label to finish the job 81:
@@ -1231,13 +1227,13 @@ func (d *Dvitype) doPage() bool {
 				d.minor(a, "nop")
 				goto done
 			case bop:
-				d._error(a, "bop occurred before eop!")
+				d.error(a, "bop occurred before eop!")
 				goto l9998
 			case eop:
 				d.major(a, "eop")
 
 				if s != 0 {
-					d._error(a, fmt.Sprintf("stack not empty at end of page (level %d)!", s))
+					d.error(a, fmt.Sprintf("stack not empty at end of page (level %d)!", s))
 				}
 				fmt.Println()
 				return true
@@ -1246,10 +1242,10 @@ func (d *Dvitype) doPage() bool {
 				if s == maxhsofar {
 					maxssofar = s + 1
 					if s == maxs {
-						d._error(a, "deeper than claimed in postamble!")
+						d.error(a, "deeper than claimed in postamble!")
 					}
 					if s == stack_size {
-						d._error(a, fmt.Sprintf("DVItype capacity exceeded (stack size= %d) ", stack_size))
+						d.error(a, fmt.Sprintf("DVItype capacity exceeded (stack size= %d) ", stack_size))
 						goto l9998
 					}
 				}
@@ -1267,7 +1263,7 @@ func (d *Dvitype) doPage() bool {
 			case pop:
 				d.major(a, "pop")
 				if s == 0 {
-					d._error(a, "(illegal at level zero)! ")
+					d.error(a, "(illegal at level zero)! ")
 				} else {
 					s--
 					hh = hhstack[s]
@@ -1343,7 +1339,7 @@ func (d *Dvitype) doPage() bool {
 			q = width[widthbase[curfont]+p]
 		}
 		if q == invalid_width {
-			d._error(a, fmt.Sprintf("character %d invalid in font", p))
+			d.error(a, fmt.Sprintf("character %d invalid in font", p))
 			d.printFont(curfont)
 			if curfont != invalid_font {
 				fmt.Print("!") // the invalid font has ‘!’ in its name
@@ -1385,13 +1381,13 @@ func (d *Dvitype) doPage() bool {
 	moveright: // Finish a command that sets h = h + q, then goto done 91
 		if h > 0 && q > 0 {
 			if h > infinity-q {
-				d._error(a, fmt.Sprintf("arithmetic overflow! parameter changed from  %d to %d", q, infinity-h))
+				d.error(a, fmt.Sprintf("arithmetic overflow! parameter changed from  %d to %d", q, infinity-h))
 				q = infinity - h
 			}
 		}
 		if h < 0 && q < 0 {
 			if -h > q+infinity {
-				d._error(a, fmt.Sprintf("arithmetic overflow! parameter changed from  %d to %d", q, (-h)-infinity))
+				d.error(a, fmt.Sprintf("arithmetic overflow! parameter changed from  %d to %d", q, (-h)-infinity))
 				q = (-h) - infinity
 			}
 		}
@@ -1415,7 +1411,7 @@ func (d *Dvitype) doPage() bool {
 		h = h + q
 		if abs(h) > maxhsofar {
 			if abs(h) > maxh+99 {
-				d._error(a, fmt.Sprintf("warning: |h|>%d!", maxh))
+				d.error(a, fmt.Sprintf("warning: |h|>%d!", maxh))
 				maxh = abs(h)
 			}
 			maxhsofar = abs(h)
@@ -1489,7 +1485,6 @@ func (d *Dvitype) skip_pages(bop_seen bool) {
 		// :96
 		bop_seen = false
 	}
-
 }
 
 // :95
